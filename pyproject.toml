@@ -1,0 +1,23 @@
+[project]
+name = "assigment-3"
+version = "0.1.0"
+description = "Bitext customer service data analyst ReAct agent"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "datasets>=4.8.5",
+    "langchain-core>=1.4.0",
+    "langchain-openai>=1.2.2",
+    "langgraph>=1.2.1",
+    "langgraph-cli[inmem]>=0.4.26",
+    "pandas>=2.3.3",
+    "pip-system-certs>=5.3",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.1",
+    "python-dotenv>=1.2.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]

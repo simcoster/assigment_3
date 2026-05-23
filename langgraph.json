@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "bitext_analyst": "./src/agent/graph.py:build_graph"
+  },
+  "env": ".env"
+}
