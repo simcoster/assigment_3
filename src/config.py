@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     nebius_api_key: str = ""
     nebius_base_url: str = "https://api.tokenfactory.nebius.com/v1/"
-    router_model: str = "Qwen/Qwen2.5-7B-Instruct"
+    router_model: str = "Qwen/Qwen3-32B"
     agent_model: str = "meta-llama/Llama-3.3-70B-Instruct"
     max_iterations: int = 12
     dataset_path: Path = PROJECT_ROOT / "data" / "bitext.parquet"

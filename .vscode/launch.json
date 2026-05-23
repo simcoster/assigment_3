@@ -8,7 +8,9 @@
       "module": "src.data.loader",
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.env",
-      "args": ["--debug"],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
       "console": "integratedTerminal",
       "justMyCode": false
     },
@@ -19,7 +21,9 @@
       "module": "src.data.loader",
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.env",
-      "args": ["--debug", "--no-sample"],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
       "console": "integratedTerminal",
       "justMyCode": false
     },
@@ -30,6 +34,9 @@
       "program": "${workspaceFolder}/scripts/download_data.py",
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
       "console": "integratedTerminal",
       "justMyCode": false
     },
@@ -40,6 +47,22 @@
       "program": "${workspaceFolder}/main.py",
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Python Debugger: Current File",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
       "console": "integratedTerminal",
       "justMyCode": false
     }

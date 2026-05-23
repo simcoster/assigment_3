@@ -44,7 +44,7 @@ def build_graph(settings: Settings | None = None):
         raise ValueError(
             "NEBIUS_API_KEY is required. Copy .env.example to .env and set your API key."
         )
-    agent_llm = build_agent_llm(settings).bind_tools(ALL_TOOLS)
+    agent_llm = build_agent_llm(settings).bind_tools(ALL_TOOLS, tool_choice="any")
     tool_node = ToolNode(ALL_TOOLS)
 
     def router_node(state: AgentState) -> dict:
