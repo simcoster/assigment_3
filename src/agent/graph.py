@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
@@ -27,6 +27,7 @@ def build_agent_llm(settings: Settings) -> ChatOpenAI:
         api_key=settings.nebius_api_key,
         base_url=settings.nebius_base_url,
         temperature=0,
+        model_kwargs={"parallel_tool_calls": False},
     )
 
 
@@ -37,6 +38,24 @@ def _latest_user_question(messages: list) -> str:
     return str(messages[-1].content) if messages else ""
 
 
+def _has_tool_results(messages: list) -> bool:
+    """Return True if the conversation already contains tool observations."""
+    return any(isinstance(message, ToolMessage) for message in messages)
+
+
+def _enforce_single_tool_call(response: AIMessage) -> AIMessage:
+    """Keep only the first tool call; Nebius Llama models reject multiple per turn."""
+    if not response.tool_calls or len(response.tool_calls) <= 1:
+        return response
+    return response.model_copy(update={"tool_calls": [response.tool_calls[0]]})
+
+
+def _bind_agent_llm(settings: Settings, messages: list):
+    """Bind tools with dynamic tool_choice: force tools first, then allow text answers."""
+    tool_choice = "auto" if _has_tool_results(messages) else "any"
+    return build_agent_llm(settings).bind_tools(ALL_TOOLS, tool_choice=tool_choice, parallel_tool_calls=False)
+
+
 def build_graph(settings: Settings | None = None):
     """Build and compile the analyst agent graph."""
     settings = settings or get_settings()
@@ -44,7 +63,6 @@ def build_graph(settings: Settings | None = None):
         raise ValueError(
             "NEBIUS_API_KEY is required. Copy .env.example to .env and set your API key."
         )
-    agent_llm = build_agent_llm(settings).bind_tools(ALL_TOOLS, tool_choice="any")
     tool_node = ToolNode(ALL_TOOLS)
 
     def router_node(state: AgentState) -> dict:
@@ -75,7 +93,9 @@ def build_graph(settings: Settings | None = None):
             else UNSTRUCTURED_SYSTEM_PROMPT
         )
         prompt_messages = [SystemMessage(content=system_prompt), *state["messages"]]
+        agent_llm = _bind_agent_llm(settings, state["messages"])
         response = agent_llm.invoke(prompt_messages)
+        response = _enforce_single_tool_call(response)
         return {
             "messages": [response],
             "iteration_count": iteration + 1,
