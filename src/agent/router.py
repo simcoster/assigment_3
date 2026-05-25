@@ -13,8 +13,8 @@ from src.config import Settings
 class QueryClassification(BaseModel):
     """Structured output for query routing."""
 
-    route: Literal["structured", "unstructured", "out_of_scope"] = Field(
-        description="Query type: structured, unstructured, or out_of_scope."
+    route: Literal["structured", "unstructured", "profile_recall", "out_of_scope"] = Field(
+        description="Query type: structured, unstructured, profile_recall, or out_of_scope."
     )
     reasoning: str = Field(description="Brief justification for the chosen route.")
 
@@ -29,13 +29,25 @@ def build_router_llm(settings: Settings) -> ChatOpenAI:
     )
 
 
-def classify_query(question: str, settings: Settings) -> QueryClassification:
+def classify_query(
+    question: str,
+    settings: Settings,
+    *,
+    context: str | None = None,
+) -> QueryClassification:
     """Classify a user question before tool selection."""
     llm = build_router_llm(settings).with_structured_output(QueryClassification)
+    if context:
+        user_content = (
+            f"Recent conversation:\n{context}\n\n"
+            f"Latest user message to classify:\n{question}"
+        )
+    else:
+        user_content = question
     result = llm.invoke(
         [
             SystemMessage(content=ROUTER_SYSTEM_PROMPT),
-            HumanMessage(content=question),
+            HumanMessage(content=user_content),
         ]
     )
     if isinstance(result, QueryClassification):

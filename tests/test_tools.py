@@ -70,3 +70,15 @@ def test_search_instructions():
     reset_filter()
     result = json.loads(search_instructions("money back"))
     assert result["matching_rows"] >= 0
+
+
+def test_sample_rows_pagination():
+    reset_filter()
+    json.loads(filter_by_category("ACCOUNT"))
+    page1 = json.loads(sample_rows(2, offset=0))
+    page2 = json.loads(sample_rows(2, offset=2))
+    assert page1["next_offset"] == 2
+    assert page2["offset"] == 2
+    ids1 = {(e["instruction"], e["response"]) for e in page1["examples"]}
+    ids2 = {(e["instruction"], e["response"]) for e in page2["examples"]}
+    assert ids1.isdisjoint(ids2)

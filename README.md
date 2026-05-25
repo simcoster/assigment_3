@@ -37,6 +37,19 @@ uv run python main.py
 
 The CLI prints router decisions, tool calls, observations, and the final answer.
 
+**Conversation memory** — use a session ID so history persists across turns and app restarts:
+
+```bash
+uv run python main.py --session my_session
+```
+
+The same `--session` value restores prior messages from `data/checkpoints.sqlite` (override with `CHECKPOINT_PATH` in `.env`).
+
+Example follow-up flows (same session):
+
+- `Show me 3 examples from the REFUND category` → `Show me 3 more`
+- `How many complaints did we get?` → `What about refunds?` → `What is the total count of the last two?`
+
 Example questions:
 
 - `What categories exist in the dataset?`
@@ -46,10 +59,23 @@ Example questions:
 - `What's the best CRM software for handling complaints?` (out-of-scope)
 - `Who is the president of France?` (out-of-scope)
 
+**User profile** — distilled facts per user (name, interests, preferences), separate from session history:
+
+```bash
+uv run python main.py --user alice --session chat1
+```
+
+Profiles are stored under `data/profiles/` (override with `PROFILE_DIR`). Same `--user` across different `--session` values shares one profile.
+
+Example flows:
+
+- `My name is Alice. From now on show me only 2 examples.` → preference saved; later `sample_rows` should use `n=2`
+- `What do you remember about me?` → answers from profile (no dataset tools)
+
 Optional verbose mode:
 
 ```bash
-uv run python main.py --verbose
+uv run python main.py --verbose --session demo --user alice
 ```
 
 ### Run tests
@@ -64,15 +90,17 @@ uv run pytest tests/ -q
 flowchart TD
     start[UserQuery] --> router[router_node]
     router -->|out_of_scope| decline[decline_node]
+    router -->|profile_recall| profileAnswer[profile_answer_node]
     router -->|structured| agent[react_agent_node]
     router -->|unstructured| agent
     decline --> endNode[END]
+    profileAnswer --> endNode
     agent -->|tool_calls| tools[tool_node]
     tools --> agent
     agent -->|final_answer| endNode
 ```
 
-1. **Router** classifies each question as `structured`, `unstructured`, or `out_of_scope` before any tool runs.
+1. **Router** classifies each question as `structured`, `unstructured`, `profile_recall`, or `out_of_scope` before any tool runs.
 2. **Decline path** returns a fixed message for out-of-scope questions (no general-knowledge answers).
 3. **ReAct loop** binds tools to the agent LLM; structured and unstructured routes use different system prompts.
 4. **Max iterations** defaults to 12 (`MAX_ITERATIONS`); the graph returns a graceful fallback if the step limit is reached.
@@ -135,9 +163,17 @@ uv run langgraph dev
 
 Uses [`langgraph.json`](langgraph.json) to expose the `bitext_analyst` graph.
 
-## MCP and persistent memory
+## Conversation memory (Task 2a)
 
-Task 1 implements the core agent and CLI. The tool implementations in `src/tools/` are intended to be reused when adding a FastMCP server and persistent memory in a later task.
+LangGraph `SqliteSaver` checkpoints store `messages` per session ID (`--session`). Each new user turn appends to the prior history so the agent can answer follow-ups. Delete `data/checkpoints.sqlite` to reset all sessions.
+
+## User profile (Task 2b)
+
+Per-user JSON profiles (`--user`) hold distilled facts, not chat logs. The CLI loads the profile once per REPL, passes it into each `graph.stream()`, injects it into agent prompts (for tool preferences), and updates/saves it after each turn. Delete `data/profiles/{user_id}.json` to reset a user.
+
+## MCP
+
+The tool implementations in `src/tools/` are intended to be reused when adding a FastMCP server in a later task.
 
 ## Environment variables
 
@@ -150,3 +186,5 @@ See [`.env.example`](.env.example) for all options.
 | `AGENT_MODEL` | Model for ReAct tool use and answers |
 | `MAX_ITERATIONS` | ReAct step limit (default 12) |
 | `DATASET_PATH` | Cached parquet path |
+| `CHECKPOINT_PATH` | SQLite file for persisted session checkpoints |
+| `PROFILE_DIR` | Directory for per-user profile JSON files |

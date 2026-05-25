@@ -139,14 +139,16 @@ def count_rows() -> str:
     return json.dumps({"scope": scope, "count": count})
 
 
-def sample_rows(n: int = 3) -> str:
+def sample_rows(n: int = 3, offset: int = 0) -> str:
     """Return example instruction/response pairs from the active filtered subset.
 
     Use after a filter tool when the user asks to see examples. Requires a prior
-    filter unless sampling from the full dataset is acceptable.
+    filter unless sampling from the full dataset is acceptable. Use offset when
+    the user asks for more examples after a previous sample_rows call.
     """
     store = get_dataset_store()
-    df = store.working_dataframe.head(n)
+    subset_len = len(store.working_dataframe)
+    df = store.working_dataframe.iloc[offset : offset + n]
     examples = [
         {
             "category": row["category"],
@@ -156,11 +158,14 @@ def sample_rows(n: int = 3) -> str:
         }
         for _, row in df.iterrows()
     ]
+    next_offset = offset + len(examples)
     return json.dumps(
         {
             "examples": examples,
             "returned": len(examples),
-            "available_in_subset": len(store.working_dataframe),
+            "offset": offset,
+            "next_offset": next_offset,
+            "available_in_subset": subset_len,
         }
     )
 

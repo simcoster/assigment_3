@@ -21,11 +21,18 @@ def print_router_decision(route: str | None, reasoning: str | None) -> None:
 
 
 def print_agent_update(node_name: str, update: dict[str, Any], verbose: bool = False) -> None:
+    if node_name == "split_turn":
+        if verbose:
+            print(f"\n[split_turn] dataset_query={update.get('turn_dataset_query')!r}")
+            if update.get("turn_profile_update"):
+                print(f"[split_turn] profile_update={update.get('turn_profile_update')}")
+        return
+
     if node_name == "router":
         print_router_decision(update.get("route"), update.get("router_reasoning"))
         return
 
-    if node_name == "decline":
+    if node_name in {"decline", "profile_answer"}:
         messages = update.get("messages", [])
         for message in messages:
             if isinstance(message, AIMessage):

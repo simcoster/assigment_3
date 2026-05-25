@@ -45,6 +45,11 @@ class SampleRowsInput(BaseModel):
         le=20,
         description="Number of example rows to return from the active filtered subset.",
     )
+    offset: int = Field(
+        default=0,
+        ge=0,
+        description="Number of rows to skip in the active subset (for 'show me more').",
+    )
 
 
 class GetConversationTextsInput(BaseModel):
