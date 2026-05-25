@@ -12,6 +12,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.agent.graph import get_graph_config
 from src.agent.profile import (
+    PreferenceReconciliation,
     ProfileStore,
     ProfileUpdate,
     TurnExtraction,
@@ -19,6 +20,7 @@ from src.agent.profile import (
     apply_pending_profile_update,
     apply_profile_update,
     format_profile_recall_answer,
+    reconcile_preferences,
     routing_question_from_extraction,
     to_prompt_block,
 )
@@ -78,7 +80,15 @@ def test_routing_question_from_extraction_uses_dataset_part():
     )
 
 
-def test_apply_pending_profile_update_from_graph_state():
+@patch("src.agent.profile.build_profile_llm")
+def test_apply_pending_profile_update_from_graph_state(mock_build_llm):
+    mock_llm = mock_build_llm.return_value
+    mock_llm.with_structured_output.return_value.invoke.return_value = (
+        PreferenceReconciliation(
+            resolved_preferences=["When calling sample_rows, use n=5 at most"],
+            replaced=[],
+        )
+    )
     profile = UserProfile(user_id="alice")
     state_values = {
         "turn_profile_update": ProfileUpdate(
@@ -86,14 +96,57 @@ def test_apply_pending_profile_update_from_graph_state():
             add_preferences=["When calling sample_rows, use n=5 at most"],
         ).model_dump()
     }
-    merged = apply_pending_profile_update(profile, state_values)
+    settings = Settings(nebius_api_key="test")
+    merged = apply_pending_profile_update(profile, state_values, settings)
     assert any("n=5" in p for p in merged.preferences)
 
 
 def test_apply_pending_profile_update_noop_when_missing():
     profile = UserProfile(user_id="alice", name="Alice")
-    merged = apply_pending_profile_update(profile, {})
+    settings = Settings(nebius_api_key="test")
+    merged = apply_pending_profile_update(profile, {}, settings)
     assert merged.name == "Alice"
+
+
+@patch("src.agent.profile.build_profile_llm")
+def test_reconcile_preferences_replaces_more_specific(mock_build_llm):
+    mock_llm = mock_build_llm.return_value
+    mock_llm.with_structured_output.return_value.invoke.return_value = (
+        PreferenceReconciliation(
+            resolved_preferences=["I like 2 examples"],
+            replaced=["I like 5 examples"],
+        )
+    )
+    settings = Settings(nebius_api_key="test")
+    profile = UserProfile(
+        user_id="alice",
+        preferences=["I like 5 examples"],
+    )
+    update = ProfileUpdate(
+        should_update=True,
+        add_preferences=["I like 2 examples"],
+    )
+    merged = apply_profile_update(profile, update, settings=settings)
+    assert merged.preferences == ["I like 2 examples"]
+
+
+@patch("src.agent.profile.build_profile_llm")
+def test_reconcile_preferences_expands_without_dropping(mock_build_llm):
+    mock_llm = mock_build_llm.return_value
+    mock_llm.with_structured_output.return_value.invoke.return_value = (
+        PreferenceReconciliation(
+            resolved_preferences=["I like cats and dogs"],
+            replaced=[],
+        )
+    )
+    settings = Settings(nebius_api_key="test")
+    resolved, replaced = reconcile_preferences(
+        ["I only like cats"],
+        ["Actually I also like dogs"],
+        settings,
+    )
+    assert resolved == ["I like cats and dogs"]
+    assert replaced == []
 
 
 @patch("src.agent.profile.build_profile_llm")

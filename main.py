@@ -106,7 +106,7 @@ def run_repl(
                 state = graph.get_state(config)
                 if state and state.values:
                     user_profile = apply_pending_profile_update(
-                        user_profile, state.values
+                        user_profile, state.values, settings
                     )
                     profile_store.save(user_profile)
             except Exception as exc:

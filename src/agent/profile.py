@@ -164,8 +164,40 @@ def _dedupe_preserve(items: list[str]) -> list[str]:
     return out
 
 
-def apply_profile_update(profile: UserProfile, update: ProfileUpdate) -> UserProfile:
-    """Merge structured deltas into a profile (pure function for tests)."""
+def reconcile_preferences(
+    existing: list[str],
+    incoming: list[str],
+    settings: Settings,
+) -> tuple[list[str], list[str]]:
+    """Merge incoming preferences with existing; drop superseded lines."""
+    if not incoming:
+        return _dedupe_preserve(existing), []
+
+    llm = build_profile_llm(settings).with_structured_output(PreferenceReconciliation)
+    payload = (
+        f"EXISTING preferences:\n{json.dumps(existing, ensure_ascii=False)}\n\n"
+        f"INCOMING preferences (this turn):\n{json.dumps(incoming, ensure_ascii=False)}"
+    )
+    result = llm.invoke(
+        [
+            SystemMessage(content=PREFERENCE_RECONCILE_SYSTEM_PROMPT),
+            HumanMessage(content=payload),
+        ]
+    )
+    if isinstance(result, PreferenceReconciliation):
+        reconciliation = result
+    else:
+        reconciliation = PreferenceReconciliation.model_validate(result)
+    resolved = _dedupe_preserve(reconciliation.resolved_preferences)
+    return resolved, reconciliation.replaced
+
+
+def apply_profile_update(
+    profile: UserProfile,
+    update: ProfileUpdate,
+    settings: Settings | None = None,
+) -> UserProfile:
+    """Merge structured deltas into a profile."""
     if not update.should_update:
         return profile
 
@@ -175,7 +207,6 @@ def apply_profile_update(profile: UserProfile, update: ProfileUpdate) -> UserPro
 
     for field, add_key, remove_key in (
         ("topics_of_interest", "add_topics", "remove_topics"),
-        ("preferences", "add_preferences", "remove_preferences"),
         ("notes", "add_notes", "remove_notes"),
     ):
         current = list(data[field])
@@ -183,6 +214,28 @@ def apply_profile_update(profile: UserProfile, update: ProfileUpdate) -> UserPro
         current = [x for x in current if x.strip().lower() not in remove_set]
         current.extend(getattr(update, add_key))
         data[field] = _dedupe_preserve(current)
+
+    current_prefs = list(data["preferences"])
+    remove_set = {x.strip().lower() for x in update.remove_preferences}
+    current_prefs = [x for x in current_prefs if x.strip().lower() not in remove_set]
+
+    if update.add_preferences:
+        print(
+            f"[profile] Reconciling {len(update.add_preferences)} new preference(s) "
+            f"with {len(current_prefs)} existing..."
+        )
+        if settings is not None:
+            current_prefs, replaced = reconcile_preferences(
+                current_prefs, update.add_preferences, settings
+            )
+            if replaced:
+                print(f"[profile] Replaced superseded preference(s): {replaced}")
+        else:
+            current_prefs.extend(update.add_preferences)
+            current_prefs = _dedupe_preserve(current_prefs)
+        print(f"[profile] Preferences now: {current_prefs}")
+
+    data["preferences"] = current_prefs
 
     merged = UserProfile.model_validate(data)
     merged.touch()
@@ -200,6 +253,7 @@ def build_profile_llm(settings: Settings) -> ChatOpenAI:
 
 def extract_turn_parts(user_message: str, settings: Settings) -> TurnExtraction:
     """Split a user message into dataset query vs profile facts (LLM, no regex)."""
+    print("[profile] Extracting dataset query and preferences from user message...")
     llm = build_profile_llm(settings).with_structured_output(TurnExtraction)
     result = llm.invoke(
         [
@@ -208,8 +262,23 @@ def extract_turn_parts(user_message: str, settings: Settings) -> TurnExtraction:
         ]
     )
     if isinstance(result, TurnExtraction):
-        return result
-    return TurnExtraction.model_validate(result)
+        extraction = result
+    else:
+        extraction = TurnExtraction.model_validate(result)
+
+    if extraction.profile_update.should_update:
+        print(f"[profile] dataset_query={extraction.dataset_query!r}")
+        pu = extraction.profile_update
+        if pu.add_preferences:
+            print(f"[profile] Extracted preferences: {pu.add_preferences}")
+        if pu.add_topics:
+            print(f"[profile] Extracted topics: {pu.add_topics}")
+        if pu.name:
+            print(f"[profile] Extracted name: {pu.name}")
+    else:
+        print("[profile] No personal facts to store this turn.")
+
+    return extraction
 
 
 def routing_question_from_extraction(
@@ -230,13 +299,23 @@ def profile_update_from_state(state_values: dict) -> ProfileUpdate | None:
 
 
 def apply_pending_profile_update(
-    profile: UserProfile, state_values: dict
+    profile: UserProfile,
+    state_values: dict,
+    settings: Settings,
 ) -> UserProfile:
     """Apply turn_profile_update from graph state if present."""
     update = profile_update_from_state(state_values)
     if update is None:
         return profile
-    return apply_profile_update(profile, update)
+
+    print("[profile] Updating user profile on disk...")
+    before = list(profile.preferences)
+    merged = apply_profile_update(profile, update, settings=settings)
+    if merged.preferences != before:
+        print(f"[profile] Saved profile for {merged.user_id}")
+    elif update.should_update:
+        print(f"[profile] Saved profile for {merged.user_id} (non-preference fields)")
+    return merged
 
 
 def profile_from_state_dict(data: dict | None) -> UserProfile | None:
