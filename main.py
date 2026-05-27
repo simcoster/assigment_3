@@ -18,10 +18,6 @@ from src.agent.checkpointer import create_checkpointer
 from src.agent.cli import print_agent_update
 from src.agent.graph import build_graph, get_graph_config
 from src.agent.profile import ProfileStore, apply_pending_profile_update
-from src.agent.recommender import (
-    is_recommendation_request,
-    recommend_next_query,
-)
 from src.config import get_settings
 from src.data.loader import load_cached_dataset
 from src.data.store import DatasetStore
@@ -84,28 +80,6 @@ def run_repl(
                 print("Goodbye.")
                 break
 
-            if is_recommendation_request(user_input):
-                try:
-                    state = graph.get_state(config)
-                    messages = state.values.get("messages", []) if state else []
-                except Exception:
-                    messages = []
-
-                try:
-                    recommendation = recommend_next_query(messages, user_profile, settings)
-                    print(
-                        "\n[recommender] Suggested next dataset question "
-                        "(this is NOT executed yet):"
-                    )
-                    print(f"- {recommendation.suggested_query}")
-                    print(f"\nReason: {recommendation.reasoning}\n")
-                    print(
-                        "You can edit this suggestion or ask a different question in the next turn."
-                    )
-                except Exception as exc:
-                    print(f"[recommender] Failed to generate suggestion: {exc}")
-                continue
-
             final_answer: str | None = None
 
             for chunk in graph.stream(
@@ -118,7 +92,7 @@ def run_repl(
             ):
                 for node_name, update in chunk.items():
                     print_agent_update(node_name, update, verbose=verbose)
-                    if node_name in {"agent", "decline", "profile_answer"}:
+                    if node_name in {"agent", "decline", "profile_answer", "recommendation"}:
                         messages = update.get("messages", [])
                         if messages and hasattr(messages[-1], "content"):
                             content = messages[-1].content

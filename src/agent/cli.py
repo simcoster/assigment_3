@@ -52,7 +52,7 @@ def format_agent_update(
         )
         return steps
 
-    if node_name in {"decline", "profile_answer"}:
+    if node_name in {"decline", "profile_answer", "recommendation"}:
         for message in update.get("messages", []):
             if isinstance(message, AIMessage) and message.content:
                 steps.append({"type": "assistant", "content": str(message.content)})

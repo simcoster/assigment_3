@@ -99,16 +99,18 @@ flowchart TD
     start[UserQuery] --> router[router_node]
     router -->|out_of_scope| decline[decline_node]
     router -->|profile_recall| profileAnswer[profile_answer_node]
+    router -->|recommendation| recommend[recommendation_node]
     router -->|structured| agent[react_agent_node]
     router -->|unstructured| agent
     decline --> endNode[END]
     profileAnswer --> endNode
+    recommend --> endNode
     agent -->|tool_calls| tools[tool_node]
     tools --> agent
     agent -->|final_answer| endNode
 ```
 
-1. **Router** classifies each question as `structured`, `unstructured`, `profile_recall`, or `out_of_scope` before any tool runs.
+1. **Router** classifies each question as `structured`, `unstructured`, `profile_recall`, `recommendation`, or `out_of_scope` before any tool runs.
 2. **Decline path** returns a fixed message for out-of-scope questions (no general-knowledge answers).
 3. **ReAct loop** binds tools to the agent LLM; structured and unstructured routes use different system prompts.
 4. **Max iterations** defaults to 12 (`MAX_ITERATIONS`); the graph returns a graceful fallback if the step limit is reached.

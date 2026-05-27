@@ -18,10 +18,6 @@ from src.agent.checkpointer import create_checkpointer
 from src.agent.cli import checkpoint_messages_to_chat, format_agent_update, truncate_text
 from src.agent.graph import build_graph, get_graph_config
 from src.agent.profile import ProfileStore, UserProfile, apply_pending_profile_update
-from src.agent.recommender import (
-    is_recommendation_request,
-    recommend_next_query,
-)
 from src.config import Settings, get_settings
 from src.data.loader import load_cached_dataset
 from src.data.store import DatasetStore
@@ -178,50 +174,6 @@ def main() -> None:
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        if is_recommendation_request(prompt):
-            try:
-                state = graph.get_state(config)
-                messages = state.values.get("messages", []) if state else []
-            except Exception:
-                messages = []
-
-            try:
-                rec = recommend_next_query(messages, user_profile, settings)
-                with st.chat_message("assistant"):
-                    st.markdown(
-                        "Here is a suggested next question about the dataset "
-                        "(I am **not** running it yet):"
-                    )
-                    st.markdown(f"> {rec.suggested_query}")
-                    st.caption(rec.reasoning)
-                    st.info(
-                        "You can refine this suggestion or type a different question, "
-                        "and I'll run that next."
-                    )
-
-                st.session_state.messages.append(
-                    {
-                        "role": "assistant",
-                        "content": (
-                            "Suggested next question (not executed):\n\n"
-                            f"> {rec.suggested_query}\n\n"
-                            f"{rec.reasoning}"
-                        ),
-                        "steps": [],
-                    }
-                )
-            except Exception as exc:
-                with st.chat_message("assistant"):
-                    st.error(f"Failed to generate a query suggestion: {exc}")
-                st.session_state.messages.append(
-                    {
-                        "role": "assistant",
-                        "content": f"[recommender] Failed to generate suggestion: {exc}",
-                        "steps": [],
-                    }
-                )
-            return
-
         reasoning_steps: list[dict[str, Any]] = []
         final_answer: str | None = None
 
@@ -247,7 +199,12 @@ def main() -> None:
                             elif step.get("type") == "observation":
                                 status.write("Tool result received")
 
-                        if node_name in {"agent", "decline", "profile_answer"}:
+                        if node_name in {
+                            "agent",
+                            "decline",
+                            "profile_answer",
+                            "recommendation",
+                        }:
                             messages = update.get("messages", [])
                             if messages and hasattr(messages[-1], "content"):
                                 content = messages[-1].content

@@ -12,17 +12,21 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.agent.recommender import (  # noqa: E402
     QueryRecommendation,
-    is_recommendation_request,
+    format_recommendation_answer,
     recommend_next_query,
 )
 from src.agent.profile import UserProfile  # noqa: E402
 from src.config import Settings  # noqa: E402
 
 
-def test_is_recommendation_request_matches_key_phrases() -> None:
-    assert is_recommendation_request("What should I query next?")
-    assert is_recommendation_request("Can you suggest a query for me?")
-    assert not is_recommendation_request("How many refund requests?")
+def test_format_recommendation_answer_includes_suggestion() -> None:
+    rec = QueryRecommendation(
+        suggested_query="How many SHIPPING conversations mention delays?",
+        reasoning="Shipping was discussed earlier.",
+    )
+    answer = format_recommendation_answer(rec)
+    assert "SHIPPING" in answer
+    assert "not** running it yet" in answer
 
 
 @patch("src.agent.recommender.build_recommender_llm")

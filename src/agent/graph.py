@@ -23,6 +23,7 @@ from src.agent.prompts import (
     STRUCTURED_SYSTEM_PROMPT,
     UNSTRUCTURED_SYSTEM_PROMPT,
 )
+from src.agent.recommender import format_recommendation_answer, recommend_next_query
 from src.agent.router import classify_query
 from src.agent.state import AgentState
 from src.config import Settings, get_settings
@@ -155,6 +156,14 @@ def build_graph(
         content = format_profile_recall_answer(profile)
         return {"messages": [AIMessage(content=content)]}
 
+    def recommendation_node(state: AgentState) -> dict:
+        profile = profile_from_state_dict(state.get("user_profile"))
+        if profile is None:
+            profile = UserProfile(user_id="default")
+        recommendation = recommend_next_query(state["messages"], profile, settings)
+        content = format_recommendation_answer(recommendation)
+        return {"messages": [AIMessage(content=content)]}
+
     def agent_node(state: AgentState) -> dict:
         iteration = state.get("iteration_count", 0)
         if iteration >= settings.max_iterations:
@@ -185,6 +194,8 @@ def build_graph(
             return "decline"
         if route == "profile_recall":
             return "profile_answer"
+        if route == "recommendation":
+            return "recommendation"
         return "agent"
 
     def route_after_agent(state: AgentState) -> str:
@@ -206,6 +217,7 @@ def build_graph(
     graph.add_node("router", router_node)
     graph.add_node("decline", decline_node)
     graph.add_node("profile_answer", profile_answer_node)
+    graph.add_node("recommendation", recommendation_node)
     graph.add_node("agent", agent_node)
     graph.add_node("tools", tool_node)
 
@@ -217,11 +229,13 @@ def build_graph(
         {
             "decline": "decline",
             "profile_answer": "profile_answer",
+            "recommendation": "recommendation",
             "agent": "agent",
         },
     )
     graph.add_edge("decline", END)
     graph.add_edge("profile_answer", END)
+    graph.add_edge("recommendation", END)
     graph.add_conditional_edges(
         "agent",
         route_after_agent,

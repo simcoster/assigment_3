@@ -12,12 +12,15 @@ Classify each question as exactly one route:
 - structured: concrete, data-driven questions answerable with counts, lists, filters, or distributions
 - unstructured: open-ended summarization or pattern questions about how agents respond
 - profile_recall: user asks what you remember about them (identity, preferences, interests), not dataset stats
+- recommendation: user asks for a suggested next dataset question to explore (not to run it yet)
 - out_of_scope: unrelated to this dataset (general knowledge, trivia, product recommendations, creative writing, coding, etc.)
 
 Examples:
 - "How many refund requests?" -> structured
 - "Summarize the FEEDBACK category" -> unstructured
 - "What do you remember about me?" -> profile_recall
+- "What should I query next?" -> recommendation
+- "Can you suggest another question about the dataset?" -> recommendation
 - "Who won the Champions League?" -> out_of_scope
 - "What's the best CRM software?" -> out_of_scope
 """

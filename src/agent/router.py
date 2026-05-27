@@ -13,8 +13,13 @@ from src.config import Settings
 class QueryClassification(BaseModel):
     """Structured output for query routing."""
 
-    route: Literal["structured", "unstructured", "profile_recall", "out_of_scope"] = Field(
-        description="Query type: structured, unstructured, profile_recall, or out_of_scope."
+    route: Literal[
+        "structured", "unstructured", "profile_recall", "recommendation", "out_of_scope"
+    ] = Field(
+        description=(
+            "Query type: structured, unstructured, profile_recall, "
+            "recommendation, or out_of_scope."
+        )
     )
     reasoning: str = Field(description="Brief justification for the chosen route.")
 

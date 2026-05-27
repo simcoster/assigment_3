@@ -44,3 +44,15 @@ def test_classify_out_of_scope(mock_build_llm, settings: Settings):
 
     result = classify_query("Who is the president of France?", settings)
     assert result.route == "out_of_scope"
+
+
+@patch("src.agent.router.build_router_llm")
+def test_classify_recommendation(mock_build_llm, settings: Settings):
+    mock_llm = mock_build_llm.return_value
+    mock_llm.with_structured_output.return_value.invoke.return_value = QueryClassification(
+        route="recommendation",
+        reasoning="User wants a suggested next dataset question.",
+    )
+
+    result = classify_query("What should I query next?", settings)
+    assert result.route == "recommendation"

@@ -56,23 +56,15 @@ def _conversation_summary(messages: Iterable[BaseMessage], max_chars: int = 2000
     return summary
 
 
-def is_recommendation_request(text: str) -> bool:
-    """Return True if the user is asking for a suggested next query."""
-    lowered = text.strip().lower()
-    if not lowered:
-        return False
-
-    triggers = [
-        "what should i query next",
-        "what should i ask next",
-        "suggest a query",
-        "suggest another query",
-        "any ideas what to query",
-        "any ideas what i should query",
-        "recommend a query",
-        "recommend another query",
-    ]
-    return any(trigger in lowered for trigger in triggers)
+def format_recommendation_answer(recommendation: QueryRecommendation) -> str:
+    """Natural-language answer for a suggested follow-up dataset question."""
+    return (
+        "Here is a suggested next question about the dataset "
+        "(I am **not** running it yet):\n\n"
+        f"> {recommendation.suggested_query}\n\n"
+        f"{recommendation.reasoning}\n\n"
+        "You can refine this suggestion or ask a different question in the next turn."
+    )
 
 
 def recommend_next_query(
