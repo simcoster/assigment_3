@@ -37,6 +37,14 @@ uv run python main.py
 
 The CLI prints router decisions, tool calls, observations, and the final answer.
 
+### Run the Streamlit chat app
+
+```bash
+uv run streamlit run streamlit_app.py
+```
+
+The web UI shows each answer in the chat, with an expandable **Reasoning steps** section (router route, tool calls, and observations). Use the sidebar **Session ID** to switch or resume conversations (same checkpoint file as the CLI `--session` flag).
+
 **Conversation memory** — use a session ID so history persists across turns and app restarts:
 
 ```bash
