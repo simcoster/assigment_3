@@ -149,7 +149,8 @@ assigment_3/
 │   ├── config.py
 │   ├── data/               # Loader, cache, sample fallback
 │   ├── tools/              # Pydantic-schemas + tool implementations
-│   └── agent/              # Router, graph, prompts, CLI helpers
+│   ├── agent/              # Router, graph, prompts, CLI helpers
+│   └── mcp_server/         # FastMCP server (Task 3)
 ├── tests/
 ├── pyproject.toml
 └── requirements.txt
@@ -171,9 +172,91 @@ LangGraph `SqliteSaver` checkpoints store `messages` per session ID (`--session`
 
 Per-user JSON profiles (`--user`) hold distilled facts, not chat logs. The CLI loads the profile once per REPL, passes it into each `graph.stream()`, injects it into agent prompts (for tool preferences), and updates/saves it after each turn. Delete `data/profiles/{user_id}.json` to reset a user.
 
-## MCP
+## MCP Server (Task 3)
 
-The tool implementations in `src/tools/` are intended to be reused when adding a FastMCP server in a later task.
+The Bitext dataset tools are also exposed as an MCP server via [FastMCP](https://gofastmcp.com/). The server reuses the same implementations in `src/tools/dataset_tools.py`.
+
+**Prerequisite:** cache the dataset first:
+
+```bash
+uv run python scripts/download_data.py
+```
+
+### Start the server
+
+**stdio (default)** — for Cursor, Claude Desktop, and other local MCP clients:
+
+```bash
+uv run python src/mcp_server/server.py
+```
+
+Alternative using the FastMCP CLI:
+
+```bash
+uv run fastmcp run src/mcp_server/server.py:mcp
+```
+
+**HTTP** — for remote clients or the MCP Inspector:
+
+```bash
+uv run python src/mcp_server/server.py --transport http --port 8000
+```
+
+### Exposed MCP tools
+
+| Tool | Description |
+|------|-------------|
+| `list_categories` | List all category values |
+| `list_intents` | List intents (optional `category` filter) |
+| `filter_by_category` | Set working subset to a category |
+| `count_rows` | Count rows in active subset |
+| `sample_rows` | Sample examples (`n`, `offset`) |
+| `reset_filter` | Clear the active filter |
+
+Filter state is **process-wide**: chain `filter_by_category` → `count_rows` → `sample_rows` in the same server session, or call `reset_filter` between unrelated questions.
+
+### Connect a client
+
+**Cursor** — add to `.cursor/mcp.json` (use your absolute project path for `cwd`):
+
+```json
+{
+  "mcpServers": {
+    "bitext-analyst": {
+      "command": "uv",
+      "args": ["run", "python", "src/mcp_server/server.py"],
+      "cwd": "C:/Dev/nebius/agents/assigment_3"
+    }
+  }
+}
+```
+
+**Call one tool from Python** (stdio transport):
+
+```python
+import asyncio
+from fastmcp import Client
+
+async def main():
+    async with Client("uv run python src/mcp_server/server.py") as client:
+        result = await client.call_tool("list_categories", {})
+        print(result)
+
+asyncio.run(main())
+```
+
+For HTTP transport after starting the server on port 8000:
+
+```python
+async with Client("http://localhost:8000/mcp") as client:
+    result = await client.call_tool("list_categories", {})
+```
+
+### Example tool chain
+
+1. `filter_by_category("SHIPPING")`
+2. `count_rows()`
+3. `sample_rows(n=3)`
 
 ## Environment variables
 
