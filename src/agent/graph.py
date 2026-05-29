@@ -23,7 +23,13 @@ from src.agent.prompts import (
     STRUCTURED_SYSTEM_PROMPT,
     UNSTRUCTURED_SYSTEM_PROMPT,
 )
-from src.agent.recommender import format_recommendation_answer, recommend_next_query
+from src.agent.recommender import (
+    format_recommendation_answer,
+    format_refinement_answer,
+    pending_from_state,
+    recommend_next_query,
+    refine_suggestion,
+)
 from src.agent.router import classify_query
 from src.agent.state import AgentState
 from src.config import Settings, get_settings
@@ -83,11 +89,19 @@ def _conversation_context(messages: list, max_turns: int = 4, max_chars: int = 2
 def _system_prompt_with_profile(base_prompt: str, state: AgentState) -> str:
     profile = profile_from_state_dict(state.get("user_profile"))
     if not profile:
-        return base_prompt
-    block = to_prompt_block(profile)
-    if not block:
-        return base_prompt
-    return f"{base_prompt}\n\n{block}"
+        prompt = base_prompt
+    else:
+        block = to_prompt_block(profile)
+        prompt = f"{base_prompt}\n\n{block}" if block else base_prompt
+
+    turn_query = state.get("turn_dataset_query")
+    latest_user = _latest_user_question(state.get("messages", []))
+    if turn_query and turn_query.strip() and turn_query.strip() != latest_user.strip():
+        prompt += (
+            "\n\nThe user confirmed they want you to answer this dataset question:\n"
+            f"> {turn_query.strip()}"
+        )
+    return prompt
 
 
 def _has_tool_results(messages: list) -> bool:
@@ -137,14 +151,29 @@ def build_graph(
 
     def router_node(state: AgentState) -> dict:
         messages = state["messages"]
-        question = state.get("turn_dataset_query") or _latest_user_question(messages)
+        question = _latest_user_question(messages)
         context = _conversation_context(messages)
-        classification = classify_query(question, settings, context=context)
-        return {
+        pending = state.get("pending_recommendation")
+        classification = classify_query(
+            question,
+            settings,
+            context=context,
+            pending_recommendation=pending,
+        )
+        result: dict = {
             "route": classification.route,
             "router_reasoning": classification.reasoning,
             "iteration_count": 0,
         }
+        if classification.route in {
+            "structured",
+            "unstructured",
+            "out_of_scope",
+            "profile_recall",
+            "recommendation",
+        }:
+            result["pending_recommendation"] = None
+        return result
 
     def decline_node(_: AgentState) -> dict:
         return {"messages": [AIMessage(content=DECLINE_MESSAGE)]}
@@ -162,7 +191,65 @@ def build_graph(
             profile = UserProfile(user_id="default")
         recommendation = recommend_next_query(state["messages"], profile, settings)
         content = format_recommendation_answer(recommendation)
-        return {"messages": [AIMessage(content=content)]}
+        return {
+            "messages": [AIMessage(content=content)],
+            "pending_recommendation": recommendation.model_dump(),
+        }
+
+    def recommendation_refine_node(state: AgentState) -> dict:
+        profile = profile_from_state_dict(state.get("user_profile"))
+        if profile is None:
+            profile = UserProfile(user_id="default")
+        pending = pending_from_state(state.get("pending_recommendation"))
+        if pending is None:
+            return {
+                "messages": [
+                    AIMessage(
+                        content=(
+                            "I don't have a pending suggestion to refine. "
+                            "Ask 'What should I query next?' to get a starting idea."
+                        )
+                    )
+                ],
+                "pending_recommendation": None,
+            }
+        refinement = _latest_user_question(state["messages"])
+        recommendation = refine_suggestion(
+            pending, refinement, state["messages"], profile, settings
+        )
+        content = format_refinement_answer(recommendation)
+        return {
+            "messages": [AIMessage(content=content)],
+            "pending_recommendation": recommendation.model_dump(),
+        }
+
+    def prepare_confirmed_query_node(state: AgentState) -> dict:
+        pending = pending_from_state(state.get("pending_recommendation"))
+        if pending is None:
+            return {
+                "messages": [
+                    AIMessage(
+                        content=(
+                            "I don't have a pending suggestion to run. "
+                            "Ask 'What should I query next?' first."
+                        )
+                    )
+                ],
+                "pending_recommendation": None,
+            }
+
+        query = pending.suggested_query.strip()
+        classification = classify_query(query, settings)
+        route = classification.route
+        if route not in {"structured", "unstructured"}:
+            route = "structured"
+        return {
+            "route": route,
+            "turn_dataset_query": query,
+            "pending_recommendation": None,
+            "router_reasoning": f"Executing confirmed suggestion: {query}",
+            "iteration_count": 0,
+        }
 
     def agent_node(state: AgentState) -> dict:
         iteration = state.get("iteration_count", 0)
@@ -196,7 +283,16 @@ def build_graph(
             return "profile_answer"
         if route == "recommendation":
             return "recommendation"
+        if route == "recommendation_refine":
+            return "recommendation_refine"
+        if route == "recommendation_confirm":
+            return "prepare_confirmed"
         return "agent"
+
+    def route_after_prepare_confirmed(state: AgentState) -> str:
+        if state.get("turn_dataset_query"):
+            return "agent"
+        return END
 
     def route_after_agent(state: AgentState) -> str:
         iteration = state.get("iteration_count", 0)
@@ -218,6 +314,8 @@ def build_graph(
     graph.add_node("decline", decline_node)
     graph.add_node("profile_answer", profile_answer_node)
     graph.add_node("recommendation", recommendation_node)
+    graph.add_node("recommendation_refine", recommendation_refine_node)
+    graph.add_node("prepare_confirmed", prepare_confirmed_query_node)
     graph.add_node("agent", agent_node)
     graph.add_node("tools", tool_node)
 
@@ -230,12 +328,20 @@ def build_graph(
             "decline": "decline",
             "profile_answer": "profile_answer",
             "recommendation": "recommendation",
+            "recommendation_refine": "recommendation_refine",
+            "prepare_confirmed": "prepare_confirmed",
             "agent": "agent",
         },
     )
     graph.add_edge("decline", END)
     graph.add_edge("profile_answer", END)
     graph.add_edge("recommendation", END)
+    graph.add_edge("recommendation_refine", END)
+    graph.add_conditional_edges(
+        "prepare_confirmed",
+        route_after_prepare_confirmed,
+        {"agent": "agent", END: END},
+    )
     graph.add_conditional_edges(
         "agent",
         route_after_agent,

@@ -56,3 +56,33 @@ def test_classify_recommendation(mock_build_llm, settings: Settings):
 
     result = classify_query("What should I query next?", settings)
     assert result.route == "recommendation"
+
+
+@patch("src.agent.router.build_router_llm")
+def test_classify_recommendation_refine(mock_build_llm, settings: Settings):
+    mock_llm = mock_build_llm.return_value
+    mock_llm.with_structured_output.return_value.invoke.return_value = QueryClassification(
+        route="recommendation_refine",
+        reasoning="User wants to adjust the pending suggestion.",
+    )
+
+    pending = {"suggested_query": "Show intent distribution in REFUND category."}
+    result = classify_query(
+        "I'd rather see examples instead.",
+        settings,
+        pending_recommendation=pending,
+    )
+    assert result.route == "recommendation_refine"
+
+
+@patch("src.agent.router.build_router_llm")
+def test_classify_recommendation_confirm(mock_build_llm, settings: Settings):
+    mock_llm = mock_build_llm.return_value
+    mock_llm.with_structured_output.return_value.invoke.return_value = QueryClassification(
+        route="recommendation_confirm",
+        reasoning="User confirmed they want the pending query executed.",
+    )
+
+    pending = {"suggested_query": "Show 5 examples from the REFUND category."}
+    result = classify_query("Yes, do it.", settings, pending_recommendation=pending)
+    assert result.route == "recommendation_confirm"

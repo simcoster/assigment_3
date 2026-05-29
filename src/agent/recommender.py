@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
@@ -31,6 +31,13 @@ def build_recommender_llm(settings: Settings) -> ChatOpenAI:
         base_url=settings.nebius_base_url,
         temperature=0.3,
     )
+
+
+def pending_from_state(data: dict | None) -> QueryRecommendation | None:
+    """Parse a pending recommendation stored in graph state."""
+    if not data or not data.get("suggested_query"):
+        return None
+    return QueryRecommendation.model_validate(data)
 
 
 def _conversation_summary(messages: Iterable[BaseMessage], max_chars: int = 2000) -> str:
@@ -63,7 +70,16 @@ def format_recommendation_answer(recommendation: QueryRecommendation) -> str:
         "(I am **not** running it yet):\n\n"
         f"> {recommendation.suggested_query}\n\n"
         f"{recommendation.reasoning}\n\n"
-        "You can refine this suggestion or ask a different question in the next turn."
+        "You can refine this suggestion in your next message, or say yes when you want me to run it."
+    )
+
+
+def format_refinement_answer(recommendation: QueryRecommendation) -> str:
+    """Natural-language answer after the user refines a pending suggestion."""
+    return (
+        f"Then I'd suggest: **{recommendation.suggested_query}**\n\n"
+        f"{recommendation.reasoning}\n\n"
+        "Should I go ahead?"
     )
 
 
@@ -73,8 +89,6 @@ def recommend_next_query(
     settings: Settings,
 ) -> QueryRecommendation:
     """Suggest a follow-up dataset query without executing it."""
-    from langchain_core.messages import HumanMessage as LCHumanMessage, SystemMessage
-
     convo = _conversation_summary(messages)
     profile_block = to_prompt_block(user_profile)
 
@@ -106,11 +120,51 @@ def recommend_next_query(
     result = llm.invoke(
         [
             SystemMessage(content=system_prompt),
-            LCHumanMessage(content=user_content),
+            HumanMessage(content=user_content),
         ],
-        max_tokens=1000
+        max_tokens=1000,
     )
     if isinstance(result, QueryRecommendation):
         return result
     return QueryRecommendation.model_validate(result)
 
+
+def refine_suggestion(
+    pending: QueryRecommendation,
+    refinement_message: str,
+    messages: list[BaseMessage],
+    user_profile: UserProfile,
+    settings: Settings,
+) -> QueryRecommendation:
+    """Adjust a pending suggestion based on user feedback without executing it."""
+    convo = _conversation_summary(messages)
+    profile_block = to_prompt_block(user_profile)
+
+    system_prompt = (
+        "You help refine a pending dataset question suggestion for the Bitext customer "
+        "service dataset.\n\n"
+        "The user was offered a suggested next query but wants changes (different focus, "
+        "examples instead of counts, another category, etc.).\n\n"
+        "Return ONE revised concrete question the tools could answer. Do not execute it."
+    )
+
+    user_parts = [
+        f"Current pending suggestion:\n> {pending.suggested_query}\n\n"
+        f"User refinement request:\n{refinement_message.strip()}",
+    ]
+    if convo:
+        user_parts.append(f"\nRecent conversation:\n{convo}")
+    if profile_block:
+        user_parts.append(f"\nUser profile:\n{profile_block}")
+
+    llm = build_recommender_llm(settings).with_structured_output(QueryRecommendation)
+    result = llm.invoke(
+        [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content="\n\n".join(user_parts)),
+        ],
+        max_tokens=1000,
+    )
+    if isinstance(result, QueryRecommendation):
+        return result
+    return QueryRecommendation.model_validate(result)

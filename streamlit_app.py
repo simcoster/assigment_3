@@ -204,6 +204,7 @@ def main() -> None:
                             "decline",
                             "profile_answer",
                             "recommendation",
+                            "recommendation_refine",
                         }:
                             messages = update.get("messages", [])
                             if messages and hasattr(messages[-1], "content"):

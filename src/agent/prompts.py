@@ -13,7 +13,15 @@ Classify each question as exactly one route:
 - unstructured: open-ended summarization or pattern questions about how agents respond
 - profile_recall: user asks what you remember about them (identity, preferences, interests), not dataset stats
 - recommendation: user asks for a suggested next dataset question to explore (not to run it yet)
+- recommendation_refine: user adjusts a pending suggested query (only when a pending suggestion is shown)
+- recommendation_confirm: user confirms they want the pending suggested query executed (only when pending exists)
 - out_of_scope: unrelated to this dataset (general knowledge, trivia, product recommendations, creative writing, coding, etc.)
+
+When a pending suggested query is present:
+- "Yes", "Do it", "Go ahead", "Sure" -> recommendation_confirm
+- "I'd rather see examples", "Make it about SHIPPING instead" -> recommendation_refine
+- A new unrelated dataset question -> structured or unstructured (ignore pending)
+- "What should I query next?" again -> recommendation (request a fresh suggestion)
 
 Examples:
 - "How many refund requests?" -> structured
@@ -21,6 +29,8 @@ Examples:
 - "What do you remember about me?" -> profile_recall
 - "What should I query next?" -> recommendation
 - "Can you suggest another question about the dataset?" -> recommendation
+- With pending suggestion: "Yes, do it." -> recommendation_confirm
+- With pending suggestion: "I'd rather see examples instead." -> recommendation_refine
 - "Who won the Champions League?" -> out_of_scope
 - "What's the best CRM software?" -> out_of_scope
 """

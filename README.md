@@ -75,10 +75,22 @@ uv run python main.py --user alice --session chat1
 
 Profiles are stored under `data/profiles/` (override with `PROFILE_DIR`). Same `--user` across different `--session` values shares one profile.
 
-Example flows:
+Example profile flows:
 
 - `My name is Alice. From now on show me only 2 examples.` → preference saved; later `sample_rows` should use `n=2`
 - `What do you remember about me?` → answers from profile (no dataset tools)
+
+### Query recommender (Bonus B)
+
+Ask **"What should I query next?"** to get a suggested follow-up question (not executed). The suggestion is stored as a **pending recommendation** in the session checkpoint.
+
+Example flow:
+
+1. `What should I query next?` → agent suggests a query (does not run tools)
+2. `I'd rather see examples instead.` → agent refines the pending suggestion and asks **"Should I go ahead?"**
+3. `Yes, do it.` → agent executes the confirmed query via the normal ReAct tool loop
+
+Pending suggestions are cleared when you ask a new unrelated dataset question or request a fresh recommendation.
 
 Optional verbose mode:
 
@@ -100,17 +112,21 @@ flowchart TD
     router -->|out_of_scope| decline[decline_node]
     router -->|profile_recall| profileAnswer[profile_answer_node]
     router -->|recommendation| recommend[recommendation_node]
+    router -->|recommendation_refine| recommendRefine[recommendation_refine_node]
+    router -->|recommendation_confirm| prepareConfirmed[prepare_confirmed_node]
     router -->|structured| agent[react_agent_node]
     router -->|unstructured| agent
     decline --> endNode[END]
     profileAnswer --> endNode
     recommend --> endNode
+    recommendRefine --> endNode
+    prepareConfirmed --> agent
     agent -->|tool_calls| tools[tool_node]
     tools --> agent
     agent -->|final_answer| endNode
 ```
 
-1. **Router** classifies each question as `structured`, `unstructured`, `profile_recall`, `recommendation`, or `out_of_scope` before any tool runs.
+1. **Router** classifies each question as `structured`, `unstructured`, `profile_recall`, `recommendation`, `recommendation_refine`, `recommendation_confirm`, or `out_of_scope` before any tool runs.
 2. **Decline path** returns a fixed message for out-of-scope questions (no general-knowledge answers).
 3. **ReAct loop** binds tools to the agent LLM; structured and unstructured routes use different system prompts.
 4. **Max iterations** defaults to 12 (`MAX_ITERATIONS`); the graph returns a graceful fallback if the step limit is reached.

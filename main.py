@@ -92,7 +92,13 @@ def run_repl(
             ):
                 for node_name, update in chunk.items():
                     print_agent_update(node_name, update, verbose=verbose)
-                    if node_name in {"agent", "decline", "profile_answer", "recommendation"}:
+                    if node_name in {
+                        "agent",
+                        "decline",
+                        "profile_answer",
+                        "recommendation",
+                        "recommendation_refine",
+                    }:
                         messages = update.get("messages", [])
                         if messages and hasattr(messages[-1], "content"):
                             content = messages[-1].content
