@@ -26,7 +26,7 @@ class QueryRecommendation(BaseModel):
 def build_recommender_llm(settings: Settings) -> ChatOpenAI:
     """Create the LLM used for query recommendations."""
     return ChatOpenAI(
-        model=settings.agent_model,
+        model=settings.router_model,
         api_key=settings.nebius_api_key,
         base_url=settings.nebius_base_url,
         temperature=0.3,
@@ -107,7 +107,8 @@ def recommend_next_query(
         [
             SystemMessage(content=system_prompt),
             LCHumanMessage(content=user_content),
-        ]
+        ],
+        max_tokens=1000
     )
     if isinstance(result, QueryRecommendation):
         return result
